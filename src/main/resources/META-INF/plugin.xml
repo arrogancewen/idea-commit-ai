@@ -1,0 +1,53 @@
+<idea-plugin>
+    <id>com.commitai.idea</id>
+    <name>AI Commit Message (Custom Model)</name>
+    <vendor>local</vendor>
+    <version>1.2.0</version>
+
+    <description><![CDATA[
+    <p>Generates a Git commit message from the changes selected in the Commit tool window,
+    using <b>your own</b> model endpoint (DeepSeek, OpenAI, Anthropic, Moonshot, Ollama,
+    OpenRouter, or any OpenAI-compatible gateway).</p>
+    <p>Adds a button next to the commit message field - the same place the GitHub Copilot
+    commit button lives - so it keeps working when a Copilot subscription runs out of
+    AI credits.</p>
+    <ul>
+      <li>Configurable base URL, model name and API key</li>
+      <li>OpenAI-compatible and Anthropic-compatible request shapes</li>
+      <li>Uses the platform's own patch builder for the diff, including new/untracked files</li>
+      <li>API key is stored in the IDE credential store, never in a plain-text file</li>
+    </ul>
+    ]]></description>
+
+    <idea-version since-build="241"/>
+
+    <!--
+      Deliberately mirrors the dependency set of the working GitHub Copilot plugin on
+      this platform build: it uses the very same VCS / commit-workflow APIs
+      (VcsDataKeys, CommitMessageI, AbstractCommitWorkflowHandler) while depending only
+      on platform + lang. No VCS or Git4Idea dependency is required, which also keeps
+      the plugin usable with SVN/Hg repositories.
+    -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.commitai.idea.CommitAiSettings"/>
+        <projectService serviceImplementation="com.commitai.idea.CommitMessageGenerator"/>
+        <applicationConfigurable parentId="tools"
+                                 id="com.commitai.idea.settings"
+                                 displayName="AI Commit Message"
+                                 instance="com.commitai.idea.CommitAiSettingsConfigurable"/>
+        <notificationGroup id="CommitAi.Notifications" displayType="BALLOON" isLogByDefault="true"/>
+    </extensions>
+
+    <actions>
+        <!-- Same action group as the GitHub Copilot commit button. -->
+        <action id="CommitAi.GenerateCommitMessage"
+                class="com.commitai.idea.GenerateCommitMessageAction"
+                text="Generate Commit Message with AI"
+                description="Generate a commit message from the selected changes using your own model">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

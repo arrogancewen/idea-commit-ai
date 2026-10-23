@@ -1,0 +1,20 @@
+# build output (never commit)
+build/
+out/
+*.class
+
+# IntelliJ IDEA / Gradle
+.idea/
+*.iml
+*.ipr
+*.iws
+.gradle/
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# local secrets - never commit API keys
+.env
+*.local
+secrets*
