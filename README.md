@@ -44,8 +44,8 @@ OpenRouter / any OpenAI-compatible gateway) instead of a subscription service.
 
 The plugin ships as a jar (`Install Plugin from Disk`).
 
-1. Download the latest `idea-commit-ai-*.jar` from [Releases](../../releases)
-   (if there is no release yet, see [Build from source](#build-from-source) — one command produces it)
+1. Download **[idea-commit-ai-1.2.0.jar](https://github.com/arrogancewen/idea-commit-ai/releases/download/v1.2.0/idea-commit-ai-1.2.0.jar)**
+   (or browse [all releases](../../releases); to build it yourself see [Build from source](#build-from-source))
 2. IntelliJ IDEA → `Settings` → `Plugins` → gear icon → **Install Plugin from Disk...**
 3. Pick the jar → restart the IDE
 

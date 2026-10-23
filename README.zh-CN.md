@@ -43,8 +43,8 @@
 
 插件以 jar 形式分发（`Install Plugin from Disk`）。
 
-1. 从 [Releases](../../releases) 下载最新的 `idea-commit-ai-*.jar`
-   （还没有 Release 的话见下方 [从源码构建](#从源码构建)，一条命令即可产出）
+1. 下载 **[idea-commit-ai-1.2.0.jar](https://github.com/arrogancewen/idea-commit-ai/releases/download/v1.2.0/idea-commit-ai-1.2.0.jar)**
+   （或浏览 [全部 Release](../../releases)；想自己构建见 [从源码构建](#从源码构建)）
 2. IDEA → `Settings` → `Plugins` → 齿轮图标 → **Install Plugin from Disk...**
 3. 选择 jar → 重启 IDE
 
