@@ -1,109 +1,91 @@
 # AI Commit Message
 
-**用你自己的模型，为 IntelliJ IDEA 的 Commit 窗口生成 commit message。**
+**Generate commit messages in IntelliJ IDEA with your own model.**
 
-在 Amend 旁边加一个按钮，把选中的改动变成一条 commit message —— 但走的是**你自己配置的模型端点**
-（DeepSeek / OpenAI / Anthropic / Ollama / OpenRouter / 任何 OpenAI 兼容网关），而不是某个订阅服务。
+Adds a button next to *Amend* in the Commit tool window and turns the selected changes into a
+commit message — but through **your own model endpoint** (DeepSeek / OpenAI / Anthropic / Ollama /
+OpenRouter / any OpenAI-compatible gateway) instead of a subscription service.
 
-<p align="center">
-  <em>按钮位置与 GitHub Copilot 的 commit 按钮完全一致（两者挂在同一个 action group 上）。</em>
-</p>
-
----
-
-## 目录
-
-- [为什么做这个](#为什么做这个)
-- [特性](#特性)
-- [安装](#安装)
-- [配置](#配置)
-- [输出示例](#输出示例)
-- [输出长度如何决定](#输出长度如何决定)
-- [它是怎么实现的](#它是怎么实现的)
-- [从源码构建](#从源码构建)
-- [项目结构](#项目结构)
-- [安全](#安全)
-- [兼容性](#兼容性)
-- [已知限制](#已知限制)
-- [许可证](#许可证)
+> English | [简体中文](README.zh-CN.md)
 
 ---
 
-## 为什么做这个
+## Contents
 
-GitHub Copilot 的 「Generate Commit Message」 在 AI Credits 用满后会直接失败：
+- [Features](#features)
+- [Install](#install)
+- [Configure](#configure)
+- [Output examples](#output-examples)
+- [How the length is decided](#how-the-length-is-decided)
+- [How it works](#how-it-works)
+- [Build from source](#build-from-source)
+- [Project layout](#project-layout)
+- [Security](#security)
+- [Compatibility](#compatibility)
+- [Known limitations](#known-limitations)
+- [License](#license)
 
-```
-[fetchChat] ... <https://api.individual.githubcopilot.com/chat/completions>
-            finished with 402 status
-git/commitGenerate  error -32603  →  Failed to generate commit message
-```
+---
 
-`402 Payment Required`。而且它**无视你在模型选择器里选了什么** —— 即便选了 BYOK 模型，
-commit message 的请求依然发往 Copilot 后端，所以换模型救不了这个按钮。
-
-这个插件把那条链路整个换掉：diff 发到你自己的端点，结果写回 Commit 消息框。
-
-> 它只替换「生成 commit message」这一个动作。Copilot 的补全、Chat 等功能不受影响。
-
-## 特性
+## Features
 
 | | |
 |---|---|
-| **任意模型端点** | OpenAI 兼容（`/chat/completions`）与 Anthropic 兼容（`/v1/messages`）两种请求形状；模型名是自由文本 |
-| **长度自适应** | 1–2 个文件 → 一行；55 个文件 → 摘要 + 按模块分组的要点。不是固定档位 |
-| **业务语义** | 提示词强制描述**业务/行为变化**，禁止罗列类名、方法名、表名、存储过程、SQL |
-| **代码兜底** | 模型不听话也会被裁剪：去掉 ```` ``` ```` 围栏、前言、引号、结尾句号，并强制限长 |
-| **大提交不丢区域** | 每个文件分到均等字符预算并各自截断；**完整文件清单**始终发给模型 |
-| **安全存 key** | API key 进 IDEA 凭据库（Windows DPAPI），不落明文文件 |
-| **可取消** | 生成中按钮变成停止图标，再点一次即取消 |
-| **零第三方依赖** | 只用 JDK 自带的 `java.net.http` 和手写 JSON，没有 Gson/Jackson |
+| **Any model endpoint** | OpenAI-compatible (`/chat/completions`) and Anthropic-compatible (`/v1/messages`) request shapes; the model name is free text |
+| **Length adapts to the change** | 1–2 files → a single line; 55 files → a summary plus bullets grouped by concern. Not a fixed level |
+| **Business semantics** | The prompt demands the *behavioural* change and forbids listing class names, method names, tables, stored procedures or SQL |
+| **Enforced in code** | The model cannot override the shape: fences, preambles, quotes and trailing periods are stripped, length is capped |
+| **Large commits keep every area** | Each file gets an equal share of the character budget and is truncated individually; the **complete file list** is always sent |
+| **API key stored safely** | Goes to the IDE credential store (Windows DPAPI), never a plain-text file |
+| **Cancellable** | The button becomes a stop icon while generating; click again to cancel |
+| **No third-party dependencies** | Only `java.net.http` from the JDK and a hand-written JSON reader |
 
-## 安装
+## Install
 
-插件以 jar 形式分发（`Install Plugin from Disk`）。
+The plugin ships as a jar (`Install Plugin from Disk`).
 
-1. 从 [Releases](../../releases) 下载最新的 `idea-commit-ai-*.jar`
-   （没有 Release 时，见下方 [从源码构建](#从源码构建)，一条命令即可产出）
-2. IDEA → `Settings` → `Plugins` → 齿轮图标 → **Install Plugin from Disk...**
-3. 选择 jar → 重启 IDE
+1. Download the latest `idea-commit-ai-*.jar` from [Releases](../../releases)
+   (if there is no release yet, see [Build from source](#build-from-source) — one command produces it)
+2. IntelliJ IDEA → `Settings` → `Plugins` → gear icon → **Install Plugin from Disk...**
+3. Pick the jar → restart the IDE
 
-## 配置
+## Configure
 
 `Settings` → `Tools` → **AI Commit Message**
 
-| 字段 | 说明 |
+| Field | Meaning |
 |---|---|
-| **API protocol** | `OpenAI-compatible` 或 `Anthropic-compatible` |
-| **Base URL** | 端点根地址，见下表 |
-| **Model** | 模型名，自由文本 |
-| **API key** | 存进凭据库，不写入配置文件 |
-| **Detail level** | 默认 `auto`，见[下一节](#输出长度如何决定) |
-| **Max diff characters** | 发给模型的 diff 预算，默认 60000 |
-| **Request timeout** | 默认 90 秒 |
+| **API protocol** | `OpenAI-compatible` or `Anthropic-compatible` |
+| **Base URL** | Endpoint root, see the table below |
+| **Model** | Model name, free text |
+| **API key** | Stored in the credential store, not in the settings file |
+| **Detail level** | Defaults to `auto`, see [the next section](#how-the-length-is-decided) |
+| **Max diff characters** | Budget for the diff sent to the model, default 60000 |
+| **Request timeout** | Default 90 seconds |
 
-点 **Test connection** 会真的发一次最小请求并回显模型答案，用来确认 key、URL、模型名都对。
+**Test connection** sends a real minimal request and echoes the model's answer, so you can confirm
+the key, URL and model name in one click.
 
-### 常见端点
+### Common endpoints
 
-| 服务 | API protocol | Base URL | Model 示例 |
+| Service | API protocol | Base URL | Example model |
 |---|---|---|---|
 | DeepSeek | OpenAI-compatible | `https://api.deepseek.com/v1` | `deepseek-chat` |
 | DeepSeek | Anthropic-compatible | `https://api.deepseek.com/anthropic` | `deepseek-chat` |
 | OpenAI | OpenAI-compatible | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | Anthropic | Anthropic-compatible | `https://api.anthropic.com` | `claude-sonnet-4-5` |
-| Ollama（本地） | OpenAI-compatible | `http://localhost:11434/v1` | `qwen2.5-coder` |
-| OpenRouter | OpenAI-compatible | `https://openrouter.ai/api/v1` | 任意模型 id |
+| Ollama (local) | OpenAI-compatible | `http://localhost:11434/v1` | `qwen2.5-coder` |
+| OpenRouter | OpenAI-compatible | `https://openrouter.ai/api/v1` | any model id |
 
-## 输出示例
+## Output examples
 
-选中 2 个文件时，只出一行：
+Two files selected — a single line:
 
 ```
 feat(erp): 聚水潭库存回调改为幂等分账入账并同步缓存
 ```
 
-选中一个跨多个模块的大提交时，摘要 + 按关注点分组：
+A large commit spanning several modules — a summary plus bullets grouped by concern:
 
 ```
 fix(refund): 确保库存回滚完成后再落终态
@@ -114,35 +96,38 @@ fix(refund): 确保库存回滚完成后再落终态
 - 库存变更改为原子执行，消除并发下的超卖
 ```
 
-注意要点里**没有**出现类名、方法名、表名或存储过程名 —— 这是刻意设计的。
+Note that the bullets contain **no** class names, method names, table names or stored-procedure
+names — that is deliberate.
 
-## 输出长度如何决定
+## How the length is decided
 
-固定档位没法同时满足两种场景：勾 1 个文件时一行就准，勾 50 个文件时一行就太少。
-所以默认是 `auto`，按选中的文件数决定要点数上限：
+A fixed level cannot serve both cases: with one selected file a single line is exactly right, with
+fifty files it says far too little. So the default is `auto`, deriving the bullet cap from the
+number of selected files:
 
-| 选中文件数 | 产出 |
+| Selected files | Output |
 |---|---|
-| 1–2 | 只一行摘要（≤72 字符） |
-| 3–8 | 一行 + 最多 2 条要点 |
-| 9–25 | 一行 + 最多 4 条要点 |
-| 26–60 | 一行 + 最多 6 条要点 |
-| >60 | 一行 + 最多 8 条要点 |
+| 1–2 | a single summary line (≤72 chars) |
+| 3–8 | one line + up to 2 bullets |
+| 9–25 | one line + up to 4 bullets |
+| 26–60 | one line + up to 6 bullets |
+| >60 | one line + up to 8 bullets |
 
-要点要求**按关注点/模块分组**，提示词里明确写了 `NEVER write one bullet per file`。
+Bullets are required to be **grouped by concern or module**; the prompt states
+`NEVER write one bullet per file`.
 
-也可以手动锁定：`subject only` / `subject + brief body`（最多 3 条）/ `detailed`。
+You can also pin it manually: `subject only` / `subject + brief body` (max 3 bullets) / `detailed`.
 
-**为什么要在代码里裁剪而不只靠提示词**：模型不保证听话。`CommitMessageFormatter` 负责
-去掉代码围栏、前言（如 `Here is a commit message:`）、首尾引号、结尾句号，并按预算截断 ——
-这一段有回归测试覆盖。
+**Why the shape is enforced in code and not only in the prompt**: models do not reliably obey.
+`CommitMessageFormatter` strips code fences, leading chatter (such as `Here is a commit message:`),
+surrounding quotes and trailing periods, then applies the budget — and this is covered by tests.
 
-## 它是怎么实现的
+## How it works
 
-### 按钮位置
+### Button placement
 
-不靠猜测，`Vcs.MessageActionGroup` 就是 Amend 右边那一排。一个普通 `AnAction` 注册进去即可，
-不需要任何专用扩展点：
+No guessing involved: `Vcs.MessageActionGroup` is the toolbar row to the right of *Amend*. A plain
+`AnAction` registered there is all it takes — no dedicated extension point:
 
 ```xml
 <actions>
@@ -153,119 +138,123 @@ fix(refund): 确保库存回滚完成后再落终态
 </actions>
 ```
 
-### 关键 API
+### Key APIs
 
-| 环节 | API |
+| Step | API |
 |---|---|
-| 读写消息框 | `VcsDataKeys.COMMIT_MESSAGE_CONTROL` → `CommitMessageI.setCommitMessage(String)` |
-| 取选中的改动 | `VcsDataKeys.COMMIT_WORKFLOW_UI` → `getIncludedChanges()` / `getIncludedUnversionedFiles()` |
-| 兜底 | `VcsDataKeys.COMMIT_WORKFLOW_HANDLER` 转 `AbstractCommitWorkflowHandler` → `getUi()` |
-| 生成 diff | `IdeaTextPatchBuilder.buildPatch(...)` + `UnifiedDiffWriter.write(...)` |
-| 未跟踪文件 | `new Change(null, new CurrentContentRevision(filePath))` |
+| Read/write the message | `VcsDataKeys.COMMIT_MESSAGE_CONTROL` → `CommitMessageI.setCommitMessage(String)` |
+| Read the selected changes | `VcsDataKeys.COMMIT_WORKFLOW_UI` → `getIncludedChanges()` / `getIncludedUnversionedFiles()` |
+| Fallback | `VcsDataKeys.COMMIT_WORKFLOW_HANDLER` cast to `AbstractCommitWorkflowHandler` → `getUi()` |
+| Build the diff | `IdeaTextPatchBuilder.buildPatch(...)` + `UnifiedDiffWriter.write(...)` |
+| Untracked files | `new Change(null, new CurrentContentRevision(filePath))` |
 
-### 线程模型
+### Threading
 
-`CommitWorkflowUi` 是 UI 模型，**只能在 EDT 上读**。所以流程是：
+`CommitWorkflowUi` is a UI model and may only be read on the EDT. The flow is:
 
-1. `actionPerformed`（EDT）→ `DiffCollector.capture(ui)` 抓一份选中改动的快照
-2. `Task.Backgroundable`（后台）→ 算 diff、发 HTTP
-3. `onSuccess`（回到 EDT）→ `setCommitMessage(...)`
+1. `actionPerformed` (EDT) → `DiffCollector.capture(ui)` snapshots the selection
+2. `Task.Backgroundable` (background) → build the diff, call the HTTP endpoint
+3. `onSuccess` (back on the EDT) → `setCommitMessage(...)`
 
-### 字符预算
+### Character budget
 
-大提交不能把整个 diff 塞进去。分配策略是**按文件均分**而不是"丢掉最大的"：
+A large commit will not fit. The budget is shared **per file** rather than "drop the biggest":
 
-- 每个文件拿到 `clamp(maxDiffChars / 文件数, 800, 20000)` 字符
-- 超出就各自截断，并标注 `... (diff truncated)`
-- **完整文件清单**始终进提示词 —— 这样即使某个文件的 diff 被截断，模型仍知道该区域存在
+- each file receives `clamp(maxDiffChars / fileCount, 800, 20000)` characters
+- anything longer is truncated and marked `... (diff truncated)`
+- the **complete file list** always goes into the prompt, so even a truncated file's area is known
 
-## 从源码构建
+## Build from source
 
-### 方式一：离线构建（推荐，无需网络）
+### Option 1 — offline build (recommended, no network)
 
 ```bash
 pwsh -File build.ps1
 ```
 
-自动探测本机 IDEA 与 JDK；探测不到就显式指定：
+IntelliJ IDEA and the JDK are auto-detected; if detection fails, pass them explicitly:
 
 ```bash
 pwsh -File build.ps1 -IdeaHome '/Applications/IntelliJ IDEA.app/Contents' -JdkHome "$JAVA_HOME"
 ```
 
-产物：`build/dist/idea-commit-ai-<version>.jar`
+Output: `build/dist/idea-commit-ai-<version>.jar`
 
-原理是直接对已安装 IDE 的 `lib/*.jar` 和 `lib/modules/*.jar` 编译，因此不需要下载 ~1 GB 的
-Platform SDK，也不需要 Gradle。
+It compiles directly against the installed IDE's `lib/*.jar` and `lib/modules/*.jar`, so there is no
+~1 GB Platform SDK download and no Gradle involved.
 
-### 方式二：Gradle（需要网络）
+### Option 2 — Gradle (needs network)
 
 ```bash
 gradle buildPlugin
 ```
 
-使用 IntelliJ Platform Gradle Plugin 2.19.0。`build.gradle.kts` 默认通过 `local("<IDEA 路径>")`
-复用本机 IDE；改成 `create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")` 可在任意机器构建。
-需要 `runIde` 沙箱调试时走这条路。
+Uses IntelliJ Platform Gradle Plugin 2.19.0. `build.gradle.kts` defaults to `local("<IDEA path>")` to
+reuse the local IDE; switch it to `create(IntelliJPlatformType.IntellijIdeaCommunity, "2025.3")` to
+build anywhere. Take this route when you need `runIde` for sandbox debugging.
 
-### 运行测试
+### Run the tests
 
 ```bash
 pwsh -File test.ps1
 ```
 
-40 项离线断言，覆盖两个最容易出错的部分：
+40 offline assertions covering the two parts most likely to break:
 
-- `Json` 解析器与两种响应形状（含转义、`\u` 解码、嵌套取值、402/404 错误文案）
-- `CommitMessageFormatter` 的输出形状与自适应预算（含真实场景：2 个文件 → 单行；55 个文件 → 摘要 + 要点）
+- the `Json` reader and both response shapes (escaping, `\u` decoding, nested lookups, 402/404 messages)
+- `CommitMessageFormatter` output shape and the adaptive budget (including real scenarios: 2 files → one line, 55 files → summary + bullets)
 
-## 项目结构
+## Project layout
 
 ```
 idea-commit-ai/
-├── build.ps1                     # 离线构建（自动探测 IDEA / JDK）
-├── test.ps1                      # 运行回归测试
-├── build.gradle.kts              # IntelliJ Platform Gradle 构建
+├── build.ps1                     # offline build (auto-detects IDEA / JDK)
+├── test.ps1                      # run the regression tests
+├── build.gradle.kts              # IntelliJ Platform Gradle build
 ├── LICENSE
 ├── src/main/
 │   ├── java/com/commitai/idea/
-│   │   ├── GenerateCommitMessageAction.java    # 工具栏按钮（update / actionPerformed）
-│   │   ├── CommitMessageGenerator.java         # 项目级服务：后台任务、取消、通知
-│   │   ├── DiffCollector.java                  # 改动 → 统一 diff → 字符预算
-│   │   ├── PromptTemplates.java                # 提示词（业务语义 / 分组 / 中英文）
-│   │   ├── CommitMessageFormatter.java         # 输出形状与自适应预算（代码兜底）
-│   │   ├── LlmClient.java                      # OpenAI / Anthropic 双协议
-│   │   ├── Json.java                           # 零依赖 JSON 读写
-│   │   ├── CommitAiSettings.java               # 持久化设置 + 凭据库
-│   │   └── CommitAiSettingsConfigurable.java   # 设置页 UI
+│   │   ├── GenerateCommitMessageAction.java    # toolbar button (update / actionPerformed)
+│   │   ├── CommitMessageGenerator.java         # project service: task, cancel, notifications
+│   │   ├── DiffCollector.java                  # changes → unified diff → character budget
+│   │   ├── PromptTemplates.java                # prompt (business semantics / grouping / language)
+│   │   ├── CommitMessageFormatter.java         # output shape and adaptive budget (enforced)
+│   │   ├── LlmClient.java                      # OpenAI / Anthropic protocols
+│   │   ├── Json.java                           # dependency-free JSON reader/writer
+│   │   ├── CommitAiSettings.java               # persisted settings + credential store
+│   │   └── CommitAiSettingsConfigurable.java   # settings UI
 │   └── resources/META-INF/plugin.xml
-└── test/java/                    # 离线回归测试
+└── test/java/                    # offline regression tests
     ├── FormatterSmokeTest.java
     └── JsonSmokeTest.java
 ```
 
-## 安全
+## Security
 
-- **API key 不落明文**：通过 `PasswordSafe` 存进 IDE 凭据库（Windows 上是 DPAPI）。
-  `commit-ai.xml` 里只有 URL、模型名这类非敏感配置。
-- **不进模型的内容**：只有你选中提交的那些 diff。没有遥测，没有中间服务器。
-- **`Test connection`** 会发送一个极小的真实请求来做连通性验证。
+- **The API key is never written in plain text**: it goes through `PasswordSafe` into the IDE
+  credential store (DPAPI on Windows). `commit-ai.xml` only holds non-sensitive settings such as the
+  URL and model name.
+- **Nothing else leaves your machine**: only the diffs of the changes you selected. No telemetry, no
+  intermediary server.
+- **Test connection** sends one very small real request purely as a connectivity check.
 
-## 兼容性
+## Compatibility
 
-- 目标平台：IntelliJ IDEA 2024.1+（`since-build="241"`），在 **IDEA 2025.3（build 253）** 上验证
-- 只依赖 `com.intellij.modules.platform` 与 `com.intellij.modules.lang`，因此**Git / SVN / Mercurial
-  仓库都能用**
-- 平台 API 签名逐个用 `javap` 对照实际 IDE 安装核对过，不是凭记忆写的
+- Target platform: IntelliJ IDEA 2024.1+ (`since-build="241"`), verified on **IDEA 2025.3 (build 253)**
+- Depends only on `com.intellij.modules.platform` and `com.intellij.modules.lang`, so **Git, SVN and
+  Mercurial** repositories all work
+- Every platform API signature was checked with `javap` against the actual IDE installation rather
+  than written from memory
 
-## 已知限制
+## Known limitations
 
-- 只适配新的 **Commit 工具窗口**；旧的「Commit Changes」模态对话框未测试
-- 多仓库（multi-root）提交时按当前仓库的选中改动生成，不会跨仓库合并成一条描述
-- 二进制文件、以及删除后不可读的文件会被静默跳过
-- 提示词本身是英文的，输出语言由设置里的 `auto / zh / en` 控制
-- 不含流式输出：一次性返回，默认超时 90 秒
+- Only the new **Commit tool window** is wired up; the legacy "Commit Changes" modal dialog is untested
+- Multi-root commits describe the currently selected repository's changes; they are not merged into
+  one message across repositories
+- Binary files, and files that were deleted but are unreadable, are skipped silently
+- The prompt itself is English; the output language follows the `auto` / `zh` / `en` setting
+- No streaming: the response arrives in one piece, default timeout 90 seconds
 
-## 许可证
+## License
 
 [MIT](LICENSE)
